@@ -32,11 +32,17 @@ func New(db *pgxpool.Pool, cfg config.Config) *Server {
 	return s
 }
 
-func (s *Server) registerRoutes() {
+func (s *Server) registerRoutes(sensors *sensors.Handler) {
 	api := s.router.Group("/v1")
 	{
 		api.GET("/health", s.healthCheckHandler)
+
+		sensorsGroup := api.Group("/sensors")
+		{
+			sensorsGroup.POST("/dht11", sensors.DHT11Handler)
+		}
 	}
+
 }
 
 func (s *Server) Run() error {
@@ -44,8 +50,10 @@ func (s *Server) Run() error {
 }
 
 func (s *Server) wire() {
-	_ = sensors.NewSensorsRepo(s.db)
+	sensorsRepo := sensors.NewSensorsRepo(s.db)
+	sensorsService := sensors.NewService(sensorsRepo)
+	sensorsHandler := sensors.NewHandler(sensorsService)
 
-	s.registerRoutes()
+	s.registerRoutes(sensorsHandler)
 
 }
