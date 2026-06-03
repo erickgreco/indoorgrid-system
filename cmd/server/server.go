@@ -2,6 +2,7 @@ package server
 
 import (
 	"github.com/erickgreco/indoorgrid-system/cmd/config"
+	"github.com/erickgreco/indoorgrid-system/internal/sensors"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -27,7 +28,7 @@ func New(db *pgxpool.Pool, cfg config.Config) *Server {
 		db:     db,
 		cfg:    cfg,
 	}
-	s.registerRoutes()
+	s.wire()
 	return s
 }
 
@@ -40,4 +41,11 @@ func (s *Server) registerRoutes() {
 
 func (s *Server) Run() error {
 	return s.router.Run(s.cfg.Port)
+}
+
+func (s *Server) wire() {
+	_ = sensors.NewSensorsRepo(s.db)
+
+	s.registerRoutes()
+
 }

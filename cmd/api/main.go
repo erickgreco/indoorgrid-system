@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/erickgreco/indoorgrid-system/cmd/config"
-	"github.com/erickgreco/indoorgrid-system/cmd/db"
 	"github.com/erickgreco/indoorgrid-system/cmd/server"
+	"github.com/erickgreco/indoorgrid-system/internal/db"
 	"github.com/erickgreco/indoorgrid-system/pkg/env"
 )
 
