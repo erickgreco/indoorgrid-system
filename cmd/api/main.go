@@ -13,11 +13,12 @@ import (
 )
 
 func main() {
-	creds, err := gopro.BluetoothConn()
-	if err != nil {
-		log.Println(err)
-	}
-	log.Println(creds)
+	go func() {
+		_, err := gopro.BluetoothConn()
+		if err != nil {
+			log.Println(err)
+		}
+	}()
 
 	cfg := config.Load()
 
