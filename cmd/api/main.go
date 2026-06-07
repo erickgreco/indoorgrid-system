@@ -6,11 +6,19 @@ import (
 
 	"github.com/erickgreco/indoorgrid-system/cmd/config"
 	"github.com/erickgreco/indoorgrid-system/cmd/server"
+
+	"github.com/erickgreco/indoorgrid-system/internal/camera/gopro"
 	"github.com/erickgreco/indoorgrid-system/internal/db"
 	"github.com/erickgreco/indoorgrid-system/pkg/env"
 )
 
 func main() {
+	creds, err := gopro.BluetoothConn()
+	if err != nil {
+		log.Println(err)
+	}
+	log.Println(creds)
+
 	cfg := config.Load()
 
 	dbcfg := db.Config{

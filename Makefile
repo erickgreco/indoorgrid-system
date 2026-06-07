@@ -15,3 +15,6 @@ goose-status:
 goose-create:
 	@read -p "Migration name: " name; \
 	goose -dir $(MIGRATIONS_DIR) create $$name sql
+
+setup:
+	chmod +x scripts/*.sh
