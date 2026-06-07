@@ -31,6 +31,11 @@ func parseUUID(s string) (bluetooth.UUID, error) {
 }
 
 func BluetoothConn() (*WiFiAP, error) {
+	if creds, err := loadCreds(); err == nil && creds != nil {
+		log.Println("WiFi credentials loaded from file")
+		return creds, nil
+	}
+
 	var adapter = bluetooth.DefaultAdapter
 	if err := adapter.Enable(); err != nil {
 		return nil, fmt.Errorf("could not enable bluetooth: %w", err)
@@ -168,7 +173,14 @@ func BluetoothConn() (*WiFiAP, error) {
 		return nil, fmt.Errorf("SSID is empty after reading GP-0002")
 	}
 
-	log.Printf("WiFi credentials obtained - SSID: %s", ssid)
+	creds := &WiFiAP{
+		SSID:     ssid,
+		Password: password,
+	}
+
+	if err := saveCreds(creds); err != nil {
+		log.Printf("warning: unable to save wifi credentials: %v", err)
+	}
 
 	return &WiFiAP{SSID: ssid, Password: password}, nil
 }
