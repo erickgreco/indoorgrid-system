@@ -21,12 +21,18 @@ func main() {
 		if err != nil {
 			logger.Error(logger.DeviceConnErr, err)
 		}
-		chars, err := gopro.GoProServices(device)
+		chars, err := device.GoProServices(device)
 		if err != nil {
 			logger.Error(logger.CharsServErr, err)
 		}
 
 		logger.Info("Characteristics", "chars", chars)
+
+		result, err := device.EnableNotifications(device)
+		if err != nil {
+			logger.Error(logger.NotificationsEnableErr, err)
+		}
+		logger.Info("Presets", "result", result)
 	}()
 
 	cfg := config.Load()

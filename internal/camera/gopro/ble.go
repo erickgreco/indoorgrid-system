@@ -66,7 +66,7 @@ func BleConn() (*GoPro, error) {
 	return goPro, nil
 }
 
-func GoProServices(goPro *GoPro) (*GoProChars, error) {
+func (g *GoPro) GoProServices(goPro *GoPro) (*GoProChars, error) {
 	conn, err := goPro.device.Connected()
 	if err != nil {
 		return nil, logger.Error(logger.GetConnErr, err)
@@ -96,4 +96,86 @@ func GoProServices(goPro *GoPro) (*GoProChars, error) {
 
 	namedChars := mapChars(discoveredChars)
 	return namedChars, nil
+}
+
+// * GoPro recommends to always use Extended (13-bit) packet headers
+// * when sending messages
+func (g *GoPro) EnableNotifications(goPro *GoPro) (string, error) {
+	conn, err := goPro.device.Connected()
+	if err != nil {
+		return "", logger.Error(logger.GetConnErr, err)
+	}
+
+	if !conn {
+		return "", logger.Error(logger.NotConn, syserrors.ErrDeviceNotConnected)
+	}
+
+	chars, err := g.GoProServices(goPro)
+	if err != nil {
+		return "", logger.Error(logger.CharsServErr, err)
+	}
+
+	responseCh := make(chan []byte, 1)
+
+	if err := chars.QueryResponse.EnableNotifications(func(buf []byte) {
+		data := make([]byte, len(buf))
+		copy(data, buf)
+		responseCh <- data
+	}); err != nil {
+		return "", logger.Error(logger.NotificationsEnableErr, err)
+	}
+
+	logger.Info(logger.NotificationsEnable, logger.Characteristic, chars.CommandResponse)
+
+	var payload = []byte{0x20, 0x02, 0xF5, 0x72}
+
+	if _, err := chars.Query.WriteWithoutResponse(payload); err != nil {
+		return "", logger.Error(logger.WriteErr, err)
+	}
+
+	logger.Info(logger.WriteSuccess, logger.Payload, payload)
+
+	resp, err := readResponse(responseCh)
+	if err != nil {
+		return "", logger.Error(logger.ReadErr, err)
+	}
+
+	if len(resp) < 2 {
+		return "", logger.Error(logger.ShortResp, syserrors.ErrResponseTooShort)
+	}
+
+	if resp[0] != 0xF5 || resp[1] != 0xF2 {
+		return "", logger.Error(logger.CmdIDErr, syserrors.ErrCmdIDMatch)
+	}
+
+	return fmt.Sprintf("%X", resp[2:]), nil
+}
+
+// * GoPro documentation link: https://gopro.github.io/OpenGoPro/docs/ble/protocol/data_protocol#continuation-packets
+// * When receiving a message that is longer than 20 bytes, the message
+// * must be split into N packets with packet 1 containing a start packet
+// * header and packets 2..N containing a continuation packet header
+// * Bit 7 = 1 - continuation
+// * Bit 7 = 0 - start
+func readResponse(responseCh <-chan []byte) ([]byte, error) {
+	var buf []byte
+	var totalLen int
+
+	for {
+		packet := <-responseCh
+		if len(packet) == 0 {
+			continue
+		}
+
+		if packet[0]>>7 == 0 {
+			totalLen = int(packet[0]&0x1F)<<8 | int(packet[1])
+			buf = append(buf, packet[2:]...)
+		} else {
+			buf = append(buf, packet[1:]...)
+		}
+
+		if len(buf) >= totalLen {
+			return buf[:totalLen], nil
+		}
+	}
 }
