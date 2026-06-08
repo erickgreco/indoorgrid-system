@@ -10,14 +10,23 @@ import (
 	"github.com/erickgreco/indoorgrid-system/internal/camera/gopro"
 	"github.com/erickgreco/indoorgrid-system/internal/db"
 	"github.com/erickgreco/indoorgrid-system/pkg/env"
+	"github.com/erickgreco/indoorgrid-system/pkg/logger"
 )
 
 func main() {
+	logger.Init(env.GetString("LOG_LEVEL", "debug"))
+
 	go func() {
-		_, err := gopro.BluetoothConn()
+		device, err := gopro.BleConn()
 		if err != nil {
-			log.Println(err)
+			logger.Error(logger.DeviceConnErr, err)
 		}
+		chars, err := gopro.GoProServices(device)
+		if err != nil {
+			logger.Error(logger.CharsServErr, err)
+		}
+
+		logger.Info("Characteristics", "chars", chars)
 	}()
 
 	cfg := config.Load()
@@ -36,7 +45,7 @@ func main() {
 		log.Fatalf("db connection err: %v", err)
 	}
 	defer dbpool.Close()
-	log.Println("database connection established")
+	logger.Info("database connection established")
 
 	srv := server.New(dbpool, cfg)
 	if err := srv.Run(); err != nil {
