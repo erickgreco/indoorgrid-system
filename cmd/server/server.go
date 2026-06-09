@@ -2,6 +2,7 @@ package server
 
 import (
 	"github.com/erickgreco/indoorgrid-system/cmd/config"
+	"github.com/erickgreco/indoorgrid-system/internal/camera/gopro"
 	"github.com/erickgreco/indoorgrid-system/internal/sensors"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,9 +14,10 @@ type Server struct {
 	router *gin.Engine
 	db     *pgxpool.Pool
 	cfg    config.Config
+	camera *gopro.GoPro
 }
 
-func New(db *pgxpool.Pool, cfg config.Config) *Server {
+func New(db *pgxpool.Pool, cfg config.Config, camera *gopro.GoPro) *Server {
 	gin.SetMode(cfg.GinMode)
 
 	r := gin.New()
@@ -27,6 +29,7 @@ func New(db *pgxpool.Pool, cfg config.Config) *Server {
 		router: r,
 		db:     db,
 		cfg:    cfg,
+		camera: camera,
 	}
 	s.wire()
 	return s
@@ -55,5 +58,4 @@ func (s *Server) wire() {
 	sensorsHandler := sensors.NewHandler(sensorsService)
 
 	s.registerRoutes(sensorsHandler)
-
 }

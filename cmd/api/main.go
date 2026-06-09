@@ -16,25 +16,6 @@ import (
 func main() {
 	logger.Init(env.GetString("LOG_LEVEL", "debug"))
 
-	go func() {
-		device, err := gopro.BleConn()
-		if err != nil {
-			logger.Error(logger.DeviceConnErr, err)
-		}
-		chars, err := device.GoProServices(device)
-		if err != nil {
-			logger.Error(logger.CharsServErr, err)
-		}
-
-		logger.Info("Characteristics", "chars", chars)
-
-		result, err := device.EnableNotifications(device)
-		if err != nil {
-			logger.Error(logger.NotificationsEnableErr, err)
-		}
-		logger.Info("Presets", "result", result)
-	}()
-
 	cfg := config.Load()
 
 	dbcfg := db.Config{
@@ -53,7 +34,29 @@ func main() {
 	defer dbpool.Close()
 	logger.Info("database connection established")
 
-	srv := server.New(dbpool, cfg)
+	goPro := gopro.New()
+
+	go func() {
+		if err := goPro.BleConn(); err != nil {
+			logger.Error(logger.DeviceConnErr, err)
+		}
+
+		chars, err := goPro.GetCharacteristics()
+		if err != nil {
+			logger.Error(logger.CharsServErr, err)
+		}
+
+		logger.Info(logger.Characteristic, "chars", chars)
+
+		presets, err := goPro.GetAvailablePresets()
+		if err != nil {
+			logger.Error(logger.GetAvailPresetsErr, err)
+		}
+
+		logger.Info("available presets", "presets", presets)
+	}()
+
+	srv := server.New(dbpool, cfg, goPro)
 	if err := srv.Run(); err != nil {
 		log.Fatalf("server failed: %v", err)
 	}
