@@ -7,6 +7,7 @@ require (
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
+	google.golang.org/protobuf v1.36.10
 	tinygo.org/x/bluetooth v0.15.0
 )
 
@@ -52,5 +53,4 @@ require (
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
-	google.golang.org/protobuf v1.36.10 // indirect
 )

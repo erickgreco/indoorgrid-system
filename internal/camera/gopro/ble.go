@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"time"
 
+	gopropb "github.com/erickgreco/indoorgrid-system/internal/camera/gopro/proto"
 	"github.com/erickgreco/indoorgrid-system/pkg/logger"
 	"github.com/erickgreco/indoorgrid-system/pkg/syserrors"
+	"google.golang.org/protobuf/proto"
 	"tinygo.org/x/bluetooth"
 )
 
@@ -61,23 +63,27 @@ func (g *GoPro) BleConn() error {
 		return logger.Error(logger.DeviceConnErr, err)
 	}
 
-	logger.Info(logger.DeviceConn, "device", device)
-
 	g.device = &device
+
+	chars, err := g.GetCharacteristics()
+	if err != nil {
+		return logger.Error(logger.CharsServErr, err)
+	}
+	g.chars = *chars
+
+	queryCh, err := g.EnableGoProNotifications(g.chars.QueryResponse)
+	if err != nil {
+		return logger.Error(logger.NotificationsEnableErr, err)
+	}
+
+	// ! when working with notifications it is better to create one channel per char
+	// ! to avoid duplicated data
+	g.queryRespCh = queryCh
 
 	return nil
 }
 
 func (g *GoPro) GetCharacteristics() (*GoProChars, error) {
-	conn, err := g.device.Connected()
-	if err != nil {
-		return nil, logger.Error(logger.GetConnErr, err)
-	}
-
-	if !conn {
-		return nil, logger.Error(logger.NotConn, syserrors.ErrDeviceNotConnected)
-	}
-
 	services, err := g.device.DiscoverServices(nil)
 	if err != nil {
 		return nil, logger.Error(logger.DiscServErr, err)
@@ -106,15 +112,6 @@ func (g *GoPro) GetCharacteristics() (*GoProChars, error) {
 // * https://gopro.github.io/OpenGoPro/docs/ble/presets/#get-available-presets
 // ! This function currently does not support message field
 func (g *GoPro) GetAvailablePresets() ([]string, error) {
-	conn, err := g.device.Connected()
-	if err != nil {
-		return nil, logger.Error(logger.GetConnErr, err)
-	}
-
-	if !conn {
-		return nil, logger.Error(logger.NotConn, syserrors.ErrDeviceNotConnected)
-	}
-
 	chars, err := g.GetCharacteristics()
 	if err != nil {
 		return nil, logger.Error(logger.CharsServErr, err)
@@ -144,37 +141,77 @@ func (g *GoPro) GetAvailablePresets() ([]string, error) {
 	return presets, nil
 }
 
-// * GoPro documentation link: https://gopro.github.io/OpenGoPro/docs/ble/protocol/data_protocol#continuation-packets
-// * When receiving a message that is longer than 20 bytes, the message
-// * must be split into N packets with packet 1 containing a start packet
-// * header and packets 2..N containing a continuation packet header
-// * Bit 7 = 1 - continuation
-// * Bit 7 = 0 - start
+/*
+* Reassebles a fragmented BLE response from the GoPro into a single complete payload
+* OpenGoPro packet structure:
+*	- Start packet (bit 7 = 0): 2-byte header, bits [12:0] = total msg length
+* 	- Continuation (bit 7 = 0): 1-byte header, bits [3:0] = sequence counter (0-15, wraps)
+
+* BlueZ/D-Bus does not guarantee callback delivery order even when packets arrive
+* in order over the air. Adjacent packets dispatched microseconds apart may arrive inverted
+
+* Out of order continuations are buffered by counter and flushed in sequence as soon as
+* the missing predecessor arrives
+
+* Duplicate packets (same counter already in pending) are silently dropped
+
+* Returns the reassembled payload trimmed to totalLen, or ErrTimeout after %s
+* https://gopro.github.io/OpenGoPro/docs/ble/protocol/data_protocol/
+ */
 func readResponse(responseCh <-chan []byte) ([]byte, error) {
-	var buf []byte
 	var totalLen int
+	var full []byte
+	pending := make(map[int][]byte)
+	started := false
+	next := 0
 
 	for {
-		packet := <-responseCh
-		if len(packet) == 0 {
-			continue
-		}
+		select {
+		case p := <-responseCh:
+			if len(p) == 0 {
+				continue
+			}
 
-		if packet[0]>>7 == 0 {
-			totalLen = int(packet[0]&0x1F)<<8 | int(packet[1])
-			buf = append(buf, packet[2:]...)
-		} else {
-			buf = append(buf, packet[1:]...)
-		}
+			if p[0]>>7 == 0 {
+				if started || len(p) < 2 {
+					continue
+				}
+				totalLen = int(p[0]&0x1F)<<8 | int(p[1])
+				full = append(full, p[2:]...)
+				started = true
+			} else {
+				c := int(p[0] & 0x0F)
+				if _, exists := pending[c]; !exists {
+					pending[c] = p[1:]
+				}
+			}
 
-		if len(buf) >= totalLen {
-			return buf[:totalLen], nil
+			if !started {
+				continue
+			}
+
+			for {
+				payload, ok := pending[next]
+				if !ok {
+					break
+				}
+				full = append(full, payload...)
+				delete(pending, next)
+				next = (next + 1) % 16
+			}
+
+			if len(full) >= totalLen {
+				return full[:totalLen], nil
+			}
+
+		case <-time.After(5 * time.Second):
+			return nil, logger.Error(logger.Timeout, syserrors.ErrTimeout)
 		}
 	}
 }
 
 func (g *GoPro) EnableGoProNotifications(char bluetooth.DeviceCharacteristic) (<-chan []byte, error) {
-	responseCh := make(chan []byte, 16)
+	responseCh := make(chan []byte, 64)
 
 	if err := char.EnableNotifications(func(buf []byte) {
 		data := make([]byte, len(buf))
@@ -188,7 +225,20 @@ func (g *GoPro) EnableGoProNotifications(char bluetooth.DeviceCharacteristic) (<
 	return responseCh, nil
 }
 
+// * Drain stale packets from a previous response before writing a new command
+// * A labeled break is required because a plain break inside a select only exists
+// * in the select, not the enclosing for loop
+// * This ensures that each command starts with a clean channel
 func (g *GoPro) WriteWithResponse(char bluetooth.DeviceCharacteristic, payload []byte, responseCh <-chan []byte, featureID, responseActionID byte) ([]byte, error) {
+drain:
+	for {
+		select {
+		case <-responseCh:
+		default:
+			break drain
+		}
+	}
+
 	if _, err := char.WriteWithoutResponse(payload); err != nil {
 		return nil, logger.Error(logger.WriteErr, err)
 	}
@@ -208,5 +258,64 @@ func (g *GoPro) WriteWithResponse(char bluetooth.DeviceCharacteristic, payload [
 		return nil, logger.Error(logger.CmdIDErr, syserrors.ErrCmdIDMatch)
 	}
 
-	return resp, nil
+	logger.Info("returning", "len", len(resp)-2)
+
+	return resp[2:], nil
+}
+
+// * GoPro recommends to always use Extended (13-bit) packet headers
+// * when sending messages
+// * FeatureID | ActionID | QueryID | Message
+// * https://gopro.github.io/OpenGoPro/docs/ble/presets/#get-available-presets
+// * proto package allows to use message field and data reading
+func (g *GoPro) GetPresets() ([]PresetInfo, error) {
+	req := &gopropb.RequestGetPresetStatus{}
+
+	body, err := proto.Marshal(req)
+	if err != nil {
+		return nil, logger.Error(logger.ErrEncodingMsg, err)
+	}
+
+	msgLen := 2 + len(body)
+
+	var featureID byte = 0xF5
+	var actionID byte = 0x72
+	var responseActionID byte = 0xF2
+
+	payload := []byte{
+		0x20 | byte(msgLen>>8),
+		byte(msgLen & 0xFF),
+		featureID,
+		actionID,
+	}
+
+	payload = append(payload, body...)
+
+	resp, err := g.WriteWithResponse(g.chars.Query, payload, g.queryRespCh, featureID, responseActionID)
+	if err != nil {
+		return nil, logger.Error(logger.GetAvailPresetsErr, err)
+	}
+
+	var status gopropb.NotifyPresetStatus
+	opts := proto.UnmarshalOptions{AllowPartial: true, DiscardUnknown: true}
+
+	if err := opts.Unmarshal(resp, &status); err != nil {
+		return nil, logger.Error(logger.ErrDecodingMsg, err)
+	}
+
+	var presets []PresetInfo
+
+	for _, group := range status.GetPresetGroupArray() {
+		for _, preset := range group.GetPresetArray() {
+			presets = append(presets, PresetInfo{
+				ID:        preset.GetId(),
+				Title:     preset.GetTitleId().String(),
+				Mode:      preset.GetMode().String(),
+				IsVisible: preset.GetIsVisible(),
+				GroupID:   group.GetId().String(),
+			})
+		}
+	}
+
+	return presets, nil
 }

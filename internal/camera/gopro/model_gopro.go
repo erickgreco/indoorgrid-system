@@ -24,6 +24,15 @@ type GoProChars struct {
 }
 
 type GoPro struct {
-	device *bluetooth.Device
-	chars  GoProChars
+	device      *bluetooth.Device
+	chars       GoProChars
+	queryRespCh <-chan []byte
+}
+
+type PresetInfo struct {
+	ID        int32
+	Title     string
+	Mode      string
+	IsVisible bool
+	GroupID   string
 }

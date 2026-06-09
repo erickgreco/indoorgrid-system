@@ -29,6 +29,8 @@ const (
 	Timeout                      = "Timeout"
 	ReadErr                      = "Failed to read response"
 	GetAvailPresetsErr           = "Failed to get available presets"
+	ErrEncodingMsg               = "Failed to marshal request"
+	ErrDecodingMsg               = "Failed to unmarshal request"
 )
 
 var l *slog.Logger

@@ -41,14 +41,7 @@ func main() {
 			logger.Error(logger.DeviceConnErr, err)
 		}
 
-		chars, err := goPro.GetCharacteristics()
-		if err != nil {
-			logger.Error(logger.CharsServErr, err)
-		}
-
-		logger.Info(logger.Characteristic, "chars", chars)
-
-		presets, err := goPro.GetAvailablePresets()
+		presets, err := goPro.GetPresets()
 		if err != nil {
 			logger.Error(logger.GetAvailPresetsErr, err)
 		}
