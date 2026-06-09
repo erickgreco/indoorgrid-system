@@ -9,11 +9,15 @@ import (
 	"tinygo.org/x/bluetooth"
 )
 
-func BleConn() (*GoPro, error) {
+func New() *GoPro {
+	return &GoPro{}
+}
+
+func (g *GoPro) BleConn() error {
 	var adapter = bluetooth.DefaultAdapter
 
 	if err := adapter.Enable(); err != nil {
-		return nil, logger.Error(logger.BleEnableFailed, err)
+		return logger.Error(logger.BleEnableFailed, err)
 	}
 
 	var deviceAddress bluetooth.Address
@@ -49,25 +53,23 @@ func BleConn() (*GoPro, error) {
 		}
 	}
 	if !found {
-		return nil, logger.Error(logger.DeviceNotFoundWithinAttempts, fmt.Errorf("GoPro not found after 3 attempts"))
+		return logger.Error(logger.DeviceNotFoundWithinAttempts, fmt.Errorf("GoPro not found after 3 attempts"))
 	}
 
 	device, err := adapter.Connect(deviceAddress, bluetooth.ConnectionParams{})
 	if err != nil {
-		return nil, logger.Error(logger.DeviceConnErr, err)
+		return logger.Error(logger.DeviceConnErr, err)
 	}
 
 	logger.Info(logger.DeviceConn, "device", device)
 
-	goPro := &GoPro{
-		device: &device,
-	}
+	g.device = &device
 
-	return goPro, nil
+	return nil
 }
 
-func (g *GoPro) GoProServices(goPro *GoPro) (*GoProChars, error) {
-	conn, err := goPro.device.Connected()
+func (g *GoPro) GetCharacteristics() (*GoProChars, error) {
+	conn, err := g.device.Connected()
 	if err != nil {
 		return nil, logger.Error(logger.GetConnErr, err)
 	}
@@ -76,7 +78,7 @@ func (g *GoPro) GoProServices(goPro *GoPro) (*GoProChars, error) {
 		return nil, logger.Error(logger.NotConn, syserrors.ErrDeviceNotConnected)
 	}
 
-	services, err := goPro.device.DiscoverServices(nil)
+	services, err := g.device.DiscoverServices(nil)
 	if err != nil {
 		return nil, logger.Error(logger.DiscServErr, err)
 	}
@@ -100,55 +102,46 @@ func (g *GoPro) GoProServices(goPro *GoPro) (*GoProChars, error) {
 
 // * GoPro recommends to always use Extended (13-bit) packet headers
 // * when sending messages
-func (g *GoPro) EnableNotifications(goPro *GoPro) (string, error) {
-	conn, err := goPro.device.Connected()
+// * FeatureID | ActionID | QueryID | Message
+// * https://gopro.github.io/OpenGoPro/docs/ble/presets/#get-available-presets
+// ! This function currently does not support message field
+func (g *GoPro) GetAvailablePresets() ([]string, error) {
+	conn, err := g.device.Connected()
 	if err != nil {
-		return "", logger.Error(logger.GetConnErr, err)
+		return nil, logger.Error(logger.GetConnErr, err)
 	}
 
 	if !conn {
-		return "", logger.Error(logger.NotConn, syserrors.ErrDeviceNotConnected)
+		return nil, logger.Error(logger.NotConn, syserrors.ErrDeviceNotConnected)
 	}
 
-	chars, err := g.GoProServices(goPro)
+	chars, err := g.GetCharacteristics()
 	if err != nil {
-		return "", logger.Error(logger.CharsServErr, err)
+		return nil, logger.Error(logger.CharsServErr, err)
 	}
 
-	responseCh := make(chan []byte, 1)
-
-	if err := chars.QueryResponse.EnableNotifications(func(buf []byte) {
-		data := make([]byte, len(buf))
-		copy(data, buf)
-		responseCh <- data
-	}); err != nil {
-		return "", logger.Error(logger.NotificationsEnableErr, err)
-	}
-
-	logger.Info(logger.NotificationsEnable, logger.Characteristic, chars.CommandResponse)
-
-	var payload = []byte{0x20, 0x02, 0xF5, 0x72}
-
-	if _, err := chars.Query.WriteWithoutResponse(payload); err != nil {
-		return "", logger.Error(logger.WriteErr, err)
-	}
-
-	logger.Info(logger.WriteSuccess, logger.Payload, payload)
-
-	resp, err := readResponse(responseCh)
+	responseCh, err := g.EnableGoProNotifications(chars.QueryResponse)
 	if err != nil {
-		return "", logger.Error(logger.ReadErr, err)
+		return nil, logger.Error(logger.NotificationsEnableErr, err)
 	}
 
-	if len(resp) < 2 {
-		return "", logger.Error(logger.ShortResp, syserrors.ErrResponseTooShort)
+	var featureID byte = 0xF5
+	var actionID byte = 0x72
+	var responseActionID byte = 0xF2
+
+	var payload = []byte{0x20, 0x02, featureID, actionID}
+
+	resp, err := g.WriteWithResponse(chars.Query, payload, responseCh, featureID, responseActionID)
+	if err != nil {
+		return nil, logger.Error(logger.GetAvailPresetsErr, err)
 	}
 
-	if resp[0] != 0xF5 || resp[1] != 0xF2 {
-		return "", logger.Error(logger.CmdIDErr, syserrors.ErrCmdIDMatch)
+	presets := make([]string, len(resp))
+	for i, v := range resp {
+		presets[i] = fmt.Sprintf("%02X", v)
 	}
 
-	return fmt.Sprintf("%X", resp[2:]), nil
+	return presets, nil
 }
 
 // * GoPro documentation link: https://gopro.github.io/OpenGoPro/docs/ble/protocol/data_protocol#continuation-packets
@@ -178,4 +171,42 @@ func readResponse(responseCh <-chan []byte) ([]byte, error) {
 			return buf[:totalLen], nil
 		}
 	}
+}
+
+func (g *GoPro) EnableGoProNotifications(char bluetooth.DeviceCharacteristic) (<-chan []byte, error) {
+	responseCh := make(chan []byte, 16)
+
+	if err := char.EnableNotifications(func(buf []byte) {
+		data := make([]byte, len(buf))
+		copy(data, buf)
+		responseCh <- data
+	}); err != nil {
+		return nil, logger.Error(logger.WriteErr, err)
+	}
+	logger.Info(logger.NotificationsEnable, logger.Characteristic, char)
+
+	return responseCh, nil
+}
+
+func (g *GoPro) WriteWithResponse(char bluetooth.DeviceCharacteristic, payload []byte, responseCh <-chan []byte, featureID, responseActionID byte) ([]byte, error) {
+	if _, err := char.WriteWithoutResponse(payload); err != nil {
+		return nil, logger.Error(logger.WriteErr, err)
+	}
+
+	logger.Info(logger.WriteSuccess, logger.Payload, payload)
+
+	resp, err := readResponse(responseCh)
+	if err != nil {
+		return nil, logger.Error(logger.ReadErr, err)
+	}
+
+	if len(resp) < 2 {
+		return nil, logger.Error(logger.ShortResp, syserrors.ErrResponseTooShort)
+	}
+
+	if resp[0] != featureID || resp[1] != responseActionID {
+		return nil, logger.Error(logger.CmdIDErr, syserrors.ErrCmdIDMatch)
+	}
+
+	return resp, nil
 }

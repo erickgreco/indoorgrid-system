@@ -28,6 +28,7 @@ const (
 	CmdIDErr                     = "Unexpected command id in response"
 	Timeout                      = "Timeout"
 	ReadErr                      = "Failed to read response"
+	GetAvailPresetsErr           = "Failed to get available presets"
 )
 
 var l *slog.Logger
