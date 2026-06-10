@@ -26,11 +26,13 @@ const (
 	Response                     = "Response"
 	ShortResp                    = "Response is too short"
 	CmdIDErr                     = "Unexpected command id in response"
+	QueryIDErr                   = "Unexpected query id in response"
 	Timeout                      = "Timeout"
 	ReadErr                      = "Failed to read response"
 	GetAvailPresetsErr           = "Failed to get available presets"
 	ErrEncodingMsg               = "Failed to marshal request"
 	ErrDecodingMsg               = "Failed to unmarshal request"
+	LoadPresetErr                = "Failed to load preset"
 )
 
 var l *slog.Logger
