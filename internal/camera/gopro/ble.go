@@ -135,7 +135,7 @@ func (g *GoPro) GetAvailablePresets() ([]string, error) {
 
 	var payload = []byte{0x20, 0x02, featureID, actionID}
 
-	resp, err := g.WriteWithResponse(chars.Query, payload, responseCh, featureID, responseActionID)
+	resp, err := g.WriteQueryWithResponse(chars.Query, payload, responseCh, featureID, responseActionID)
 	if err != nil {
 		return nil, logger.Error(logger.GetAvailPresetsErr, err)
 	}
@@ -262,10 +262,38 @@ drain:
 	}
 
 	if resp[0] != featureID || resp[1] != responseActionID {
-		return nil, logger.Error(logger.CmdIDErr, syserrors.ErrCmdIDMatch)
+		return nil, logger.Error(logger.QueryIDErr, syserrors.ErrQueryIDMatch)
 	}
 
-	logger.Info("returning", "len", len(resp)-2)
+	return resp[2:], nil
+}
+
+func (g *GoPro) WriteCommandWithResponse(char bluetooth.DeviceCharacteristic, payload []byte, responseCh <-chan []byte, commandID byte) ([]byte, error) {
+drain:
+	for {
+		select {
+		case <-responseCh:
+		default:
+			break drain
+		}
+	}
+
+	if _, err := char.WriteWithoutResponse(payload); err != nil {
+		return nil, logger.Error(logger.WriteErr, err)
+	}
+
+	resp, err := readResponsee(responseCh)
+	if err != nil {
+		return nil, logger.Error(logger.ReadErr, err)
+	}
+
+	if len(resp) < 2 {
+		return nil, logger.Error(logger.ShortResp, syserrors.ErrResponseTooShort)
+	}
+
+	if resp[0] != commandID {
+		return nil, logger.Error(logger.CmdIDErr, syserrors.ErrCmdIDMatch)
+	}
 
 	return resp[2:], nil
 }
@@ -283,13 +311,15 @@ func (g *GoPro) GetPresets() ([]PresetInfo, error) {
 		return nil, logger.Error(logger.ErrEncodingMsg, err)
 	}
 
-	var featureID byte = 0xF5
-	var actionID byte = 0x72
-	var responseActionID byte = 0xF2
+	const (
+		featureID        byte = 0xF5
+		actionID         byte = 0x72
+		responseActionID byte = 0xF2
+	)
 
 	payload := buildPacket([]byte{featureID, actionID}, body)
 
-	resp, err := g.WriteWithResponse(g.chars.Query, payload, g.queryRespCh, featureID, responseActionID)
+	resp, err := g.WriteQueryWithResponse(g.chars.Query, payload, g.queryRespCh, featureID, responseActionID)
 	if err != nil {
 		return nil, logger.Error(logger.GetAvailPresetsErr, err)
 	}
