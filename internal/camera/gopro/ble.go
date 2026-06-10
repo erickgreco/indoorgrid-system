@@ -276,20 +276,11 @@ func (g *GoPro) GetPresets() ([]PresetInfo, error) {
 		return nil, logger.Error(logger.ErrEncodingMsg, err)
 	}
 
-	msgLen := 2 + len(body)
-
 	var featureID byte = 0xF5
 	var actionID byte = 0x72
 	var responseActionID byte = 0xF2
 
-	payload := []byte{
-		0x20 | byte(msgLen>>8),
-		byte(msgLen & 0xFF),
-		featureID,
-		actionID,
-	}
-
-	payload = append(payload, body...)
+	payload := buildPacket([]byte{featureID, actionID}, body)
 
 	resp, err := g.WriteWithResponse(g.chars.Query, payload, g.queryRespCh, featureID, responseActionID)
 	if err != nil {
@@ -318,4 +309,17 @@ func (g *GoPro) GetPresets() ([]PresetInfo, error) {
 	}
 
 	return presets, nil
+}
+
+func buildPacket(header, body []byte) []byte {
+	msgLen := len(header) + len(body)
+
+	packet := make([]byte, 0, 2+msgLen)
+	packet = append(packet,
+		0x20|byte(msgLen>>8),
+		byte(msgLen&0xFF),
+	)
+	packet = append(packet, header...)
+
+	return append(packet, body...)
 }
