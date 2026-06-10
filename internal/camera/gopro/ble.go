@@ -1,6 +1,7 @@
 package gopro
 
 import (
+	"encoding/binary"
 	"fmt"
 	"time"
 
@@ -76,9 +77,15 @@ func (g *GoPro) BleConn() error {
 		return logger.Error(logger.NotificationsEnableErr, err)
 	}
 
+	commandCh, err := g.EnableGoProNotifications(g.chars.CommandResponse)
+	if err != nil {
+		return logger.Error(logger.NotificationsEnableErr, err)
+	}
+
 	// ! when working with notifications it is better to create one channel per char
 	// ! to avoid duplicated data
 	g.queryRespCh = queryCh
+	g.commandRespCh = commandCh
 
 	return nil
 }
@@ -322,4 +329,21 @@ func buildPacket(header, body []byte) []byte {
 	packet = append(packet, header...)
 
 	return append(packet, body...)
+}
+
+func (g *GoPro) LoadPreset(presetID int32) ([]byte, error) {
+	const commandID byte = 0x40 // * Load Preset
+
+	presetIDBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(presetIDBytes, uint32(presetID))
+
+	body := append([]byte{byte(len(presetIDBytes))}, presetIDBytes...)
+	payload := buildPacket([]byte{commandID}, body)
+
+	resp, err := g.WriteCommandWithResponse(g.chars.Command, payload, g.commandRespCh, commandID)
+	if err != nil {
+		return nil, logger.Error(logger.LoadPresetErr, err)
+	}
+
+	return resp, nil
 }
