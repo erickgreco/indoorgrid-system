@@ -54,22 +54,22 @@ func readResponse(responseCh <-chan []byte) ([]byte, error) {
 				var payloadStart int
 
 				switch headerType {
-				case 0x00: // GENERAL — longitud de 5 bits
+				case 0x00:
 					totalLen = int(p[0] & 0x1F)
 					payloadStart = 1
-				case 0x01: // EXT_13 — longitud de 13 bits
+				case 0x01:
 					if len(p) < 2 {
 						continue
 					}
 					totalLen = int(p[0]&0x1F)<<8 | int(p[1])
 					payloadStart = 2
-				case 0x02: // EXT_16 — longitud de 16 bits
+				case 0x02:
 					if len(p) < 3 {
 						continue
 					}
 					totalLen = int(p[1])<<8 | int(p[2])
 					payloadStart = 3
-				default: // RESERVED
+				default:
 					return nil, logger.Error(logger.ErrDecodingMsg, syserrors.ErrReservedHeader)
 				}
 
