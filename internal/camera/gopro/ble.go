@@ -289,3 +289,16 @@ func (g *GoPro) LoadPreset(presetID int32) ([]byte, error) {
 
 	return resp, nil
 }
+
+func (g *GoPro) Sleep() ([]byte, error) {
+	const commandID byte = 0x05 // * Sleep
+
+	payload := buildPacket([]byte{commandID}, nil)
+
+	resp, err := g.WriteCommandWithResponse(g.chars.Command, payload, g.commandRespCh, commandID)
+	if err != nil {
+		return nil, logger.Error(logger.SleepErr, err)
+	}
+
+	return resp, nil
+}

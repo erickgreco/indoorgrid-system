@@ -33,6 +33,7 @@ const (
 	ErrEncodingMsg               = "Failed to marshal request"
 	ErrDecodingMsg               = "Failed to unmarshal request"
 	LoadPresetErr                = "Failed to load preset"
+	SleepErr                     = "Failed to put camera into sleep mode"
 )
 
 var l *slog.Logger
