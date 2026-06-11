@@ -40,20 +40,6 @@ func main() {
 		if err := goPro.BleConn(); err != nil {
 			logger.Error(logger.DeviceConnErr, err)
 		}
-
-		presets, err := goPro.GetPresets()
-		if err != nil {
-			logger.Error(logger.GetAvailPresetsErr, err)
-		}
-
-		logger.Info("available presets", "presets", presets)
-
-		preset, err := goPro.LoadPreset(8)
-		if err != nil {
-			logger.Error(logger.LoadPresetErr, err)
-		}
-
-		logger.Info("loaded preset", "preset", preset)
 	}()
 
 	srv := server.New(dbpool, cfg, goPro)
