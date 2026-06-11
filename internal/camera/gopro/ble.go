@@ -176,58 +176,6 @@ func readResponse(responseCh <-chan []byte) ([]byte, error) {
 			}
 
 			if p[0]>>7 == 0 {
-				if started || len(p) < 2 {
-					continue
-				}
-				totalLen = int(p[0]&0x1F)<<8 | int(p[1])
-				full = append(full, p[2:]...)
-				started = true
-			} else {
-				c := int(p[0] & 0x0F)
-				if _, exists := pending[c]; !exists {
-					pending[c] = p[1:]
-				}
-			}
-
-			if !started {
-				continue
-			}
-
-			for {
-				payload, ok := pending[next]
-				if !ok {
-					break
-				}
-				full = append(full, payload...)
-				delete(pending, next)
-				next = (next + 1) % 16
-			}
-
-			if len(full) >= totalLen {
-				return full[:totalLen], nil
-			}
-
-		case <-time.After(5 * time.Second):
-			return nil, logger.Error(logger.Timeout, syserrors.ErrTimeout)
-		}
-	}
-}
-
-func readResponsee(responseCh <-chan []byte) ([]byte, error) {
-	var totalLen int
-	var full []byte
-	pending := make(map[int][]byte)
-	started := false
-	next := 0
-
-	for {
-		select {
-		case p := <-responseCh:
-			if len(p) == 0 {
-				continue
-			}
-
-			if p[0]>>7 == 0 {
 				if started {
 					continue
 				}
@@ -351,7 +299,7 @@ drain:
 		return nil, logger.Error(logger.WriteErr, err)
 	}
 
-	resp, err := readResponsee(responseCh)
+	resp, err := readResponse(responseCh)
 	if err != nil {
 		return nil, logger.Error(logger.ReadErr, err)
 	}
