@@ -113,11 +113,7 @@ func (g *GoPro) GetCharacteristics() (*GoProChars, error) {
 	return namedChars, nil
 }
 
-// * GoPro recommends to always use Extended (13-bit) packet headers
-// * when sending messages
-// * FeatureID | ActionID | QueryID | Message
-// * https://gopro.github.io/OpenGoPro/docs/ble/presets/#get-available-presets
-// ! This function currently does not support message field
+// ! Deprecated, left for documentation
 func (g *GoPro) GetAvailablePresets() ([]string, error) {
 	chars, err := g.GetCharacteristics()
 	if err != nil {
@@ -217,6 +213,81 @@ func readResponse(responseCh <-chan []byte) ([]byte, error) {
 	}
 }
 
+func readResponsee(responseCh <-chan []byte) ([]byte, error) {
+	var totalLen int
+	var full []byte
+	pending := make(map[int][]byte)
+	started := false
+	next := 0
+
+	for {
+		select {
+		case p := <-responseCh:
+			if len(p) == 0 {
+				continue
+			}
+
+			if p[0]>>7 == 0 {
+				if started {
+					continue
+				}
+
+				headerType := (p[0] >> 5) & 0x03
+				var payloadStart int
+
+				switch headerType {
+				case 0x00: // GENERAL — longitud de 5 bits
+					totalLen = int(p[0] & 0x1F)
+					payloadStart = 1
+				case 0x01: // EXT_13 — longitud de 13 bits
+					if len(p) < 2 {
+						continue
+					}
+					totalLen = int(p[0]&0x1F)<<8 | int(p[1])
+					payloadStart = 2
+				case 0x02: // EXT_16 — longitud de 16 bits
+					if len(p) < 3 {
+						continue
+					}
+					totalLen = int(p[1])<<8 | int(p[2])
+					payloadStart = 3
+				default: // RESERVED
+					return nil, logger.Error(logger.ErrDecodingMsg, syserrors.ErrReservedHeader)
+				}
+
+				full = append(full, p[payloadStart:]...)
+				started = true
+			} else {
+				c := int(p[0] & 0x0F)
+				if _, exists := pending[c]; !exists {
+					pending[c] = p[1:]
+				}
+			}
+
+			if !started {
+				continue
+			}
+
+			for {
+				payload, ok := pending[next]
+				if !ok {
+					break
+				}
+				full = append(full, payload...)
+				delete(pending, next)
+				next = (next + 1) % 16
+			}
+
+			if len(full) >= totalLen {
+				return full[:totalLen], nil
+			}
+
+		case <-time.After(5 * time.Second):
+			return nil, logger.Error(logger.Timeout, syserrors.ErrTimeout)
+		}
+	}
+}
+
 func (g *GoPro) EnableGoProNotifications(char bluetooth.DeviceCharacteristic) (<-chan []byte, error) {
 	responseCh := make(chan []byte, 64)
 
@@ -235,8 +306,8 @@ func (g *GoPro) EnableGoProNotifications(char bluetooth.DeviceCharacteristic) (<
 // * Drain stale packets from a previous response before writing a new command
 // * A labeled break is required because a plain break inside a select only exists
 // * in the select, not the enclosing for loop
-// * This ensures that each command starts with a clean channel
-func (g *GoPro) WriteWithResponse(char bluetooth.DeviceCharacteristic, payload []byte, responseCh <-chan []byte, featureID, responseActionID byte) ([]byte, error) {
+// * This ensures that each query starts with a clean channel
+func (g *GoPro) WriteQueryWithResponse(char bluetooth.DeviceCharacteristic, payload []byte, responseCh <-chan []byte, featureID, responseActionID byte) ([]byte, error) {
 drain:
 	for {
 		select {
@@ -249,8 +320,6 @@ drain:
 	if _, err := char.WriteWithoutResponse(payload); err != nil {
 		return nil, logger.Error(logger.WriteErr, err)
 	}
-
-	logger.Info(logger.WriteSuccess, logger.Payload, payload)
 
 	resp, err := readResponse(responseCh)
 	if err != nil {

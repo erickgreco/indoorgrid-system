@@ -47,6 +47,13 @@ func main() {
 		}
 
 		logger.Info("available presets", "presets", presets)
+
+		preset, err := goPro.LoadPreset(8)
+		if err != nil {
+			logger.Error(logger.LoadPresetErr, err)
+		}
+
+		logger.Info("loaded preset", "preset", preset)
 	}()
 
 	srv := server.New(dbpool, cfg, goPro)
