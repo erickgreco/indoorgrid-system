@@ -3,7 +3,9 @@ package server
 import (
 	"github.com/erickgreco/indoorgrid-system/cmd/config"
 	"github.com/erickgreco/indoorgrid-system/internal/camera/gopro"
+	"github.com/erickgreco/indoorgrid-system/internal/mqtt"
 	"github.com/erickgreco/indoorgrid-system/internal/sensors"
+	"github.com/erickgreco/indoorgrid-system/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -15,9 +17,10 @@ type Server struct {
 	db     *pgxpool.Pool
 	cfg    config.Config
 	camera *gopro.GoPro
+	mqtt   *mqtt.Client
 }
 
-func New(db *pgxpool.Pool, cfg config.Config, camera *gopro.GoPro) *Server {
+func New(db *pgxpool.Pool, cfg config.Config, camera *gopro.GoPro, mqttClient *mqtt.Client) *Server {
 	gin.SetMode(cfg.GinMode)
 
 	r := gin.New()
@@ -30,20 +33,16 @@ func New(db *pgxpool.Pool, cfg config.Config, camera *gopro.GoPro) *Server {
 		db:     db,
 		cfg:    cfg,
 		camera: camera,
+		mqtt:   mqttClient,
 	}
 	s.wire()
 	return s
 }
 
-func (s *Server) registerRoutes(sensors *sensors.Handler) {
+func (s *Server) registerRoutes() {
 	api := s.router.Group("/v1")
 	{
 		api.GET("/health", s.healthCheckHandler)
-
-		sensorsGroup := api.Group("/sensors")
-		{
-			sensorsGroup.POST("/dht11", sensors.DHT11Handler)
-		}
 	}
 
 }
@@ -53,9 +52,13 @@ func (s *Server) Run() error {
 }
 
 func (s *Server) wire() {
-	sensorsRepo := sensors.NewSensorsRepo(s.db)
+	sensorsRepo := sensors.NewRepo(s.db)
 	sensorsService := sensors.NewService(sensorsRepo)
-	sensorsHandler := sensors.NewHandler(sensorsService)
 
-	s.registerRoutes(sensorsHandler)
+	if err := s.mqtt.Subscribe(sensorsService); err != nil {
+		logger.Warn(logger.SubscribeErr, err)
+		return
+	}
+
+	s.registerRoutes()
 }
