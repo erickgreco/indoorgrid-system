@@ -19,6 +19,7 @@ services:
   mosquitto:
     image: eclipse-mosquitto:latest
     container_name: mosquitto
+    user: "1883:1883"
     ports:
       - "1883:1883"
     volumes:
