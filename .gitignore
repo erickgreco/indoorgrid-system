@@ -5,3 +5,5 @@ bin/
 .envrc
 
 data/*.json
+
+firmware/esp32-indoor-firmware/src/credentials.h
