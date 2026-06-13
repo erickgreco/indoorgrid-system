@@ -3,6 +3,7 @@ package mqtt
 import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/erickgreco/indoorgrid-system/cmd/config"
+	"github.com/erickgreco/indoorgrid-system/internal/events"
 	"github.com/erickgreco/indoorgrid-system/internal/sensors"
 	"github.com/erickgreco/indoorgrid-system/pkg/logger"
 )
@@ -33,11 +34,11 @@ func New(cfg config.Config) (*Client, error) {
 	return &Client{conn: conn}, nil
 }
 
-func (c *Client) Subscribe(service *sensors.Service) error {
+func (c *Client) Subscribe(service *sensors.Service, bus *events.EventBus) error {
 	topics := map[string]mqtt.MessageHandler{
-		bme680tag: c.BME680Handler(service),
-		bh1750tag: c.BH1750Handler(service),
-		soiltag:   c.SoilHandler(service),
+		bme680tag: c.BME680Handler(service, bus),
+		bh1750tag: c.BH1750Handler(service, bus),
+		soiltag:   c.SoilHandler(service, bus),
 	}
 
 	for topic, handler := range topics {

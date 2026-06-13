@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/erickgreco/indoorgrid-system/internal/events"
 	"github.com/erickgreco/indoorgrid-system/internal/sensors"
 	"github.com/erickgreco/indoorgrid-system/pkg/logger"
 )
 
-func (c *Client) BME680Handler(service *sensors.Service) mqtt.MessageHandler {
+func (c *Client) BME680Handler(service *sensors.Service, bus *events.EventBus) mqtt.MessageHandler {
 	return func(_ mqtt.Client, m mqtt.Message) {
 		var reading sensors.BME680Reading
 
@@ -24,10 +25,12 @@ func (c *Client) BME680Handler(service *sensors.Service) mqtt.MessageHandler {
 			logger.Warn(logger.SaveBME680Err, err)
 			return
 		}
+
+		bus.BME680 <- reading
 	}
 }
 
-func (c *Client) BH1750Handler(service *sensors.Service) mqtt.MessageHandler {
+func (c *Client) BH1750Handler(service *sensors.Service, bus *events.EventBus) mqtt.MessageHandler {
 	return func(_ mqtt.Client, m mqtt.Message) {
 		var reading sensors.BH1750Reading
 
@@ -42,10 +45,12 @@ func (c *Client) BH1750Handler(service *sensors.Service) mqtt.MessageHandler {
 			logger.Warn(logger.SaveBH1750Err, err)
 			return
 		}
+
+		bus.BH1750 <- reading
 	}
 }
 
-func (c *Client) SoilHandler(service *sensors.Service) mqtt.MessageHandler {
+func (c *Client) SoilHandler(service *sensors.Service, bus *events.EventBus) mqtt.MessageHandler {
 	return func(_ mqtt.Client, m mqtt.Message) {
 		var reading sensors.SoilReading
 
@@ -60,5 +65,7 @@ func (c *Client) SoilHandler(service *sensors.Service) mqtt.MessageHandler {
 			logger.Warn(logger.SaveSoilErr, err)
 			return
 		}
+
+		bus.Soil <- reading
 	}
 }
