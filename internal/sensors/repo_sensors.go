@@ -29,7 +29,7 @@ func (r *Repo) insertBME680(ctx context.Context, reading BME680Reading) error {
 		ctx,
 		query,
 		reading.ID,
-		reading, reading.GrowCycleID,
+		reading.GrowCycleID,
 		reading.TemperatureCelcius,
 		reading.HumidityPercent,
 		reading.PressureHpa,
