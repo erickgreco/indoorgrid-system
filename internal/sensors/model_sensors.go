@@ -22,28 +22,28 @@ const (
 )
 
 type BME680Reading struct {
-	ID                 uuid.UUID
-	GrowCycleID        *uuid.UUID
-	TemperatureCelcius float64
-	HumidityPercent    float64
-	PressureHpa        float64
-	GasResistanceOhms  float64
-	SensorAt           time.Time
-	RecordedAt         time.Time
+	ID                 uuid.UUID  `json:"id"`
+	GrowCycleID        *uuid.UUID `json:"grow_cycle_id"`
+	TemperatureCelcius float64    `json:"temperature_celcius"`
+	HumidityPercent    float64    `json:"humidity_percent"`
+	PressureHpa        float64    `json:"pressure_hpa"`
+	GasResistanceOhms  float64    `json:"gas_resistance_ohms"`
+	SensorAt           time.Time  `json:"sensor_at"`
+	RecordedAt         time.Time  `json:"recorded_at"`
 }
 
 type BH1750Reading struct {
-	ID             uuid.UUID
-	GrowCycleID    *uuid.UUID
-	IlluminanceLux float64
-	SensorAt       time.Time
-	RecordedAt     time.Time
+	ID             uuid.UUID  `json:"id"`
+	GrowCycleID    *uuid.UUID `json:"grow_cycle_id"`
+	IlluminanceLux float64    `json:"illuminance_lux"`
+	SensorAt       time.Time  `json:"sensor_at"`
+	RecordedAt     time.Time  `json:"recorded_at"`
 }
 
 type SoilReading struct {
-	ID              uuid.UUID
-	GrowCycleID     *uuid.UUID
-	MoisturePercent float64
-	SensorAt        time.Time
-	RecordedAt      time.Time
+	ID              uuid.UUID  `json:"id"`
+	GrowCycleID     *uuid.UUID `json:"grow_cycle_id"`
+	MoisturePercent float64    `json:"moisture_percent"`
+	SensorAt        time.Time  `json:"sensor_at"`
+	RecordedAt      time.Time  `json:"recorded_at"`
 }
