@@ -3,6 +3,7 @@ package server
 import (
 	"github.com/erickgreco/indoorgrid-system/cmd/config"
 	"github.com/erickgreco/indoorgrid-system/internal/camera/gopro"
+	"github.com/erickgreco/indoorgrid-system/internal/events"
 	"github.com/erickgreco/indoorgrid-system/internal/mqtt"
 	"github.com/erickgreco/indoorgrid-system/internal/sensors"
 	"github.com/erickgreco/indoorgrid-system/pkg/logger"
@@ -18,9 +19,10 @@ type Server struct {
 	cfg    config.Config
 	camera *gopro.GoPro
 	mqtt   *mqtt.Client
+	bus    *events.EventBus
 }
 
-func New(db *pgxpool.Pool, cfg config.Config, camera *gopro.GoPro, mqttClient *mqtt.Client) *Server {
+func New(db *pgxpool.Pool, cfg config.Config, camera *gopro.GoPro, mqttClient *mqtt.Client, bus *events.EventBus) *Server {
 	gin.SetMode(cfg.GinMode)
 
 	r := gin.New()
@@ -34,15 +36,21 @@ func New(db *pgxpool.Pool, cfg config.Config, camera *gopro.GoPro, mqttClient *m
 		cfg:    cfg,
 		camera: camera,
 		mqtt:   mqttClient,
+		bus:    bus,
 	}
 	s.wire()
 	return s
 }
 
-func (s *Server) registerRoutes() {
+func (s *Server) registerRoutes(eventsHandler *events.Handler) {
 	api := s.router.Group("/v1")
 	{
 		api.GET("/health", s.healthCheckHandler)
+	}
+
+	sensorsGroup := api.Group("/sensors")
+	{
+		sensorsGroup.GET("live", eventsHandler.LiveHandler)
 	}
 
 }
@@ -55,10 +63,12 @@ func (s *Server) wire() {
 	sensorsRepo := sensors.NewRepo(s.db)
 	sensorsService := sensors.NewService(sensorsRepo)
 
-	if err := s.mqtt.Subscribe(sensorsService); err != nil {
+	if err := s.mqtt.Subscribe(sensorsService, s.bus); err != nil {
 		logger.Warn(logger.SubscribeErr, err)
 		return
 	}
 
-	s.registerRoutes()
+	eventsHandler := events.NewHandler(s.bus)
+
+	s.registerRoutes(eventsHandler)
 }

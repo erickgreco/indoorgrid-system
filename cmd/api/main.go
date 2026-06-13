@@ -9,6 +9,7 @@ import (
 
 	"github.com/erickgreco/indoorgrid-system/internal/camera/gopro"
 	"github.com/erickgreco/indoorgrid-system/internal/db"
+	"github.com/erickgreco/indoorgrid-system/internal/events"
 	"github.com/erickgreco/indoorgrid-system/internal/mqtt"
 	"github.com/erickgreco/indoorgrid-system/pkg/env"
 	"github.com/erickgreco/indoorgrid-system/pkg/logger"
@@ -48,7 +49,9 @@ func main() {
 	}
 	logger.Info("mqtt connection established")
 
-	srv := server.New(dbpool, cfg, goPro, mqttClient)
+	bus := events.New()
+
+	srv := server.New(dbpool, cfg, goPro, mqttClient, bus)
 	if err := srv.Run(); err != nil {
 		log.Fatalf("server failed: %v", err)
 	}
